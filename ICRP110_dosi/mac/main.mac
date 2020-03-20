@@ -1,0 +1,131 @@
+#-----------------------------------------------------------------------#
+#               CRCT - ICRP 110 models dosimetry                        #
+#                                                                       #
+# Author: Maxime Chauvin, maxime.chauvin@inserm.fr                      #
+# Last revision: 02-09-2019                                             #
+#                                                                       #
+# GATE macro for molecular dosimetry with the ICRP                      #
+# AF voxel model                                                        #
+#                                                                       #
+# Usage example:                                                        #
+#   Gate -a [Organ_ID,95][nb,1e5][job,1] mac/main.mac                   #
+#                                                                       #
+# Inputs:                                                               #
+#   - data/AF_UINT16_299_137_348.mhd                                    #
+#   - data/AF_UINT16_299_137_348.raw                                    #
+#   - data/ICRP_AF_GateMaterials.db                                     #
+#   - data/ICRP_AF_LabelsToMaterials.txt                                #
+#   - data/Activity/ActivityRange*.dat                                  #
+#                                                                       #
+# Outputs:                                                              #
+#   - output/phantom-Dose.mhd                                           #
+#   - output/phantom-Dose.raw                                           #
+#   - output/phantomDBR.txt                                             #
+#   - output/stat.log                                                   #
+#                                                                       #
+#-----------------------------------------------------------------------#
+
+#=====================================================
+# GEOMETRY
+#=====================================================
+
+/gate/geometry/setMaterialDatabase                                data/AF_GateMaterials.db
+
+# world
+/gate/world/setMaterial                                           Air_outside_body
+/gate/world/geometry/setXLength                                   1000 mm
+/gate/world/geometry/setYLength                                   1000 mm
+/gate/world/geometry/setZLength                                   2000 mm
+
+# patient
+/gate/world/daughters/name                                        patient
+/gate/world/daughters/insert                                      box
+/gate/patient/geometry/setXLength                                 530.725 mm
+/gate/patient/geometry/setYLength                                 243.175 mm
+/gate/patient/geometry/setZLength                                 1684.32 mm
+/gate/patient/setMaterial                                         Air_outside_body
+
+# Voxel phantom
+/gate/patient/daughters/name                                      voxPhantom
+/gate/patient/daughters/insert                                    ImageNestedParametrisedVolume
+/gate/voxPhantom/geometry/setHUToMaterialFile                     data/AF_LabelsToMaterials.txt
+/gate/voxPhantom/geometry/setImage                                data/AF_UINT16_299_137_348.mhd
+
+#=====================================================
+# PHYSICS
+#=====================================================
+/gate/physics/addPhysicsList                                      emlivermore
+
+/gate/physics/Gamma/SetCutInRegion                                world 10.0 mm
+/gate/physics/Electron/SetCutInRegion                             world 10.0 mm
+/gate/physics/Positron/SetCutInRegion                             world 10.0 mm
+
+/gate/physics/Gamma/SetCutInRegion                                patient 0.1 mm
+/gate/physics/Electron/SetCutInRegion                             patient 0.1 mm
+/gate/physics/Positron/SetCutInRegion                             patient 0.1 mm
+
+/gate/physics/processes/PhotoElectric/setAugerElectron            true
+/gate/physics/displayCuts
+
+#=====================================================
+# DETECTORS
+#=====================================================
+
+/gate/actor/addActor                                              DoseActor  dose3D
+/gate/actor/dose3D/attachTo                                       voxPhantom
+/gate/actor/dose3D/stepHitType                                    random
+/gate/actor/dose3D/setResolution                                  299 137 348
+/gate/actor/dose3D/enableDose                                     true
+/gate/actor/dose3D/enableUncertaintyDose                          true
+/gate/actor/dose3D/save                                           output/{job}_phantom.mhd
+/gate/actor/dose3D/inputDoseByRegions                             data/AF_UINT16_299_137_348.mhd 
+/gate/actor/dose3D/outputDoseByRegions                            output/{job}_phantomDBR.txt
+
+/gate/actor/addActor                                              SimulationStatisticActor stat
+/gate/actor/stat/save                                             output/{job}_stats.txt
+/gate/actor/stat/saveEveryNSeconds                                60
+
+#=====================================================
+# INITIALISATION
+#=====================================================
+#/vis/open OGLI
+#/vis/drawVolume
+
+/gate/run/initialize
+/gate/random/setEngineName                                        MersenneTwister
+/gate/random/setEngineSeed                                        auto
+/gate/random/verbose                                              1
+
+#=====================================================
+# SOURCE
+#=====================================================
+
+# Lu177 from ICRP voxel model
+/control/execute                                                  mac/source177Lu.mac
+
+# Mono-energetic particles from ICRP voxel model
+#/gate/source/addSource                                            ActivityImage voxel
+#/gate/source/ActivityImage/reader/insert                          image
+#/gate/source/ActivityImage/imageReader/translator/insert          range
+#/gate/source/ActivityImage/imageReader/rangeTranslator/readTable  data/Activity/ActivityRange{Organ_ID}.dat
+#/gate/source/ActivityImage/imageReader/rangeTranslator/describe   1
+#/gate/source/ActivityImage/imageReader/readFile                   data/AF_UINT16_299_137_348.mhd
+#/gate/source/ActivityImage/setPosition                            -265.3625 -121.5875 -842.16 mm
+#/gate/source/ActivityImage/gps/particle                           {particle}
+#/gate/source/ActivityImage/gps/energytype                         Mono
+#/gate/source/ActivityImage/gps/monoenergy                         {energy} MeV
+#/gate/source/ActivityImage/gps/angtype                            iso
+#/gate/source/ActivityImage/dump                                   1
+
+#=====================================================
+# VERBOSE
+#=====================================================
+#/event/verbose 2
+#/tracking/verbose 2
+
+#=====================================================
+# APPLICATION
+#=====================================================
+
+/gate/application/setTotalNumberOfPrimaries                       {nb}
+/gate/application/start
